@@ -1,40 +1,72 @@
-from django.shortcuts import get_object_or_404, render
-from django.http import HttpResponseRedirect
-from django.urls import reverse
+from django.contrib import messages
+from django.shortcuts import render, get_object_or_404, get_list_or_404, redirect
+from django.http import HttpResponse
 
-from django.views import generic
-from .models import Choice, Question
-
-
-class IndexView(generic.ListView):
-    template_name = 'polls/index.html'
-    context_object_name = 'latest_question_list'
-
-    def get_queryset(self):
-        """Return the last five published questions."""
-        return Question.objects.order_by('-pub_date')[:5]
+from .models import Question, Choice
 
 
-class DetailView(generic.DetailView):
-    model = Question
-    template_name = 'polls/detail.html'
+def index(request):
+    # get_list_or404를 사용한 경우
+    latest_question_list = get_list_or_404(
+        Question.objects.order_by('-pub_date')[:5]
+    )
+    context = {
+        'latest_question_list': latest_question_list,
+    }
+    return render(request, 'polls/index.html', context)
 
 
-class ResultsView(generic.DetailView):
-    model = Question
-    template_name = 'polls/results.html'
+def detail(request, question_id):
+    # question_id 가 pk인 Question 객체를 가저와
+    # context라는 이름을 가진 dict에 'question'이라는 키 값으로 위 변수를 할당
+    # 이 후 'polls/detail.html'과 context를 랜더한 결과를 리턴
+
+    question = get_object_or_404(Question, pk=question_id)
+    context = {
+        'question': question,
+    }
+    return render(request, 'polls/detail.html', context)
+
+
+def results(request, question_id):
+    # detail.html 파일을 수정해서 result.html을 만들고
+    # 질문에 대한 모든 선택사항의 선택수(votes)를 출력
+    question = get_object_or_404(Question, pk=question_id)
+    context = {
+        'question': question,
+    }
+    # detail.html 내부
+    #   question을 출력
+    #   해당 question의 모든 choice를 (question.choice_set.all) 출력
+    #   loop돌며 각 choice의 제목과 votes를 출력
+    return render(request, 'polls/result.html', context)
 
 
 def vote(request, question_id):
-    question = get_object_or_404(Question, pk=question_id)
-    try:
-        selected_choice = question.choice_set.get(pk=request.POST['choice'])
-    except (KeyError, Choice.DoesNotExist):
-        return render(request, 'polls/detail.html', {
-            'question': question,
-            'error_message': "You didn't select a choice.",
-        })
+    # request의 method가 POST 방식일 때
+    if request.method == 'POST':
+        # 전달받은 데이터 중 'choice'키에 해당하는 값을
+        # HttpResponse에 적절히 돌려준다
+        data = request.POST
+        try:
+            choice_id = data['choice']
+            # choice 키에 해당하는 Choice 인스턴스의 vote값을 1증가 시키고
+            # 데이터베이스에 변경사항을 반영
+            choice = Choice.objects.get(id=choice_id)
+            choice.votes += 1
+            choice.save()
+            return redirect('polls:results', question_id)
+        except (KeyError, Choice.DoesNotExist):
+            # message프레임워크를 사용
+            # 지금 모르셔도 됩니다
+            # request에 메시지를 저장해 놓고 해당 request에 대한
+            # reponse를 돌려줄 때 메시지를 담아 보낸다
+            messages.add_message(
+                request,
+                messages.ERROR,
+                "You didn't select a choice",
+            )
+            return redirect('polls:detail', question_id)
+            # 이 후 return   페이지로 redirect
     else:
-        selected_choice.votes += 1
-        selected_choice.save()
-        return HttpResponseRedirect(reverse('polls:results', args=(question.id,)))
+        return HttpResponse("You're voting on question %s." % question_id)
